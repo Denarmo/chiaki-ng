@@ -9,6 +9,10 @@
 
 #include <oboe/Oboe.h>
 
+#include <algorithm>
+#include <atomic>
+#include <cstring>
+
 #define BUFFER_CHUNK_SIZE 1024
 #define BUFFER_CHUNKS_COUNT 32
 
@@ -34,6 +38,8 @@ struct AudioOutput
 	oboe::ManagedStream stream;
 	AudioOutputCallback stream_callback;
 	AudioBuffer buf;
+	std::atomic<float> volume{1.0f};
+	std::atomic<bool> muted{false};
 
 	AudioOutput() : stream_callback(this) {}
 };
@@ -89,6 +95,22 @@ extern "C" void android_chiaki_audio_output_frame(int16_t *buf, size_t samples_c
 		CHIAKI_LOGW(ao->log, "Audio Output Buffer Overflow!");
 }
 
+extern "C" void android_chiaki_audio_output_set_volume(void *audio_output, float volume)
+{
+	if(!audio_output)
+		return;
+	auto ao = reinterpret_cast<AudioOutput *>(audio_output);
+	ao->volume.store(volume < 0.0f ? 0.0f : (volume > 1.0f ? 1.0f : volume), std::memory_order_relaxed);
+}
+
+extern "C" void android_chiaki_audio_output_set_muted(void *audio_output, bool muted)
+{
+	if(!audio_output)
+		return;
+	auto ao = reinterpret_cast<AudioOutput *>(audio_output);
+	ao->muted.store(muted, std::memory_order_relaxed);
+}
+
 oboe::DataCallbackResult AudioOutputCallback::onAudioReady(oboe::AudioStream *stream, void *audio_data, int32_t num_frames)
 {
 	if(stream->getFormat() != oboe::AudioFormat::I16)
@@ -108,6 +130,26 @@ oboe::DataCallbackResult AudioOutputCallback::onAudioReady(oboe::AudioStream *st
 	{
 		CHIAKI_LOGV(audio_output->log, "Audio Output Buffer Underflow!");
 		memset(buf + buf_size_delivered, 0, buf_size_requested - buf_size_delivered);
+	}
+
+	if(audio_output->muted.load(std::memory_order_relaxed))
+	{
+		memset(buf, 0, buf_size_requested);
+	}
+	else
+	{
+		float vol = audio_output->volume.load(std::memory_order_relaxed);
+		if(vol <= 0.0f)
+		{
+			memset(buf, 0, buf_size_requested);
+		}
+		else if(vol < 0.999f)
+		{
+			auto *samples = reinterpret_cast<int16_t *>(audio_data);
+			size_t sample_count = buf_size_delivered / sizeof(int16_t);
+			for(size_t i = 0; i < sample_count; ++i)
+				samples[i] = static_cast<int16_t>(samples[i] * vol);
+		}
 	}
 
 	return oboe::DataCallbackResult::Continue;

@@ -21,33 +21,59 @@ println("Determined Chiaki Version: $chiakiVersion")
 
 android {
     namespace "com.metallic.chiaki"
-    compileSdk 35
+    compileSdk 36
     ndkVersion "28.2.13676358"
 
+    def isWindows = System.getProperty("os.name").toLowerCase(Locale.ROOT).contains("win")
+    def localProtoc = rootProject.file(isWindows ? "../.tools/protoc/bin/protoc.exe" : "../.tools/protoc/bin/protoc")
+    def cmakeArgs = [
+            "-DCHIAKI_ENABLE_TESTS=OFF",
+            "-DCHIAKI_ENABLE_CLI=OFF",
+            "-DCHIAKI_ENABLE_GUI=OFF",
+            "-DCHIAKI_ENABLE_SETSU=OFF",
+            "-DCHIAKI_ENABLE_ANDROID=ON",
+            "-DCHIAKI_ENABLE_FFMPEG_DECODER=OFF",
+            "-DCHIAKI_ENABLE_PI_DECODER=OFF",
+            "-DCHIAKI_LIB_ENABLE_OPUS=OFF",
+            "-DCHIAKI_LIB_OPENSSL_EXTERNAL_PROJECT=ON",
+            "-DCHIAKI_LIB_JSONC_EXTERNAL_PROJECT=ON",
+            "-DCHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT=ON",
+            "-DCHIAKI_ENABLE_STEAM_SHORTCUT=OFF",
+            "-DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF",
+            "-DANDROID_STL=c++_shared",
+            "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+            "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+    ]
+    if (localProtoc.exists()) {
+        cmakeArgs.add("-DPROTOC=${localProtoc.absolutePath.replace('\\', '/')}")
+    }
+    def envPython = System.getenv("PYTHON_EXECUTABLE")
+    if (envPython && file(envPython).exists()) {
+        cmakeArgs.add("-DPYTHON_EXECUTABLE=${file(envPython).absolutePath.replace('\\', '/')}")
+    } else if (isWindows) {
+        def pathDirs = (System.getenv("PATH") ?: "").split(File.pathSeparator)
+        def foundPy = pathDirs.findResult { dir ->
+            if (!dir || dir.toLowerCase(Locale.ROOT).contains("windowsapps")) return null
+            def f = new File(dir, "python.exe")
+            f.exists() ? f : null
+        }
+        if (foundPy) {
+            cmakeArgs.add("-DPYTHON_EXECUTABLE=${foundPy.absolutePath.replace('\\', '/')}")
+        }
+    }
+
     defaultConfig {
-        applicationId "com.metallic.chiaki"
-        minSdk 24
-        targetSdk 35
-        versionCode 12
-        versionName chiakiVersion
+        applicationId "io.github.denarmo.chiaki"
+        minSdk 26
+        targetSdk 36
+        versionCode 100
+        versionName "${chiakiVersion}-ecp1"
+        ndk {
+            abiFilters "arm64-v8a"
+        }
         externalNativeBuild {
             cmake {
-                arguments "-DCHIAKI_ENABLE_TESTS=OFF",
-                        "-DCHIAKI_ENABLE_CLI=OFF",
-                        "-DCHIAKI_ENABLE_GUI=OFF",
-                        "-DCHIAKI_ENABLE_SETSU=OFF",
-                        "-DCHIAKI_ENABLE_ANDROID=ON",
-                        "-DCHIAKI_ENABLE_FFMPEG_DECODER=OFF",
-                        "-DCHIAKI_ENABLE_PI_DECODER=OFF",
-                        "-DCHIAKI_LIB_ENABLE_OPUS=OFF",
-                        "-DCHIAKI_LIB_OPENSSL_EXTERNAL_PROJECT=ON",
-                        "-DCHIAKI_LIB_JSONC_EXTERNAL_PROJECT=ON",
-                        "-DCHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT=ON",
-                        "-DCHIAKI_ENABLE_STEAM_SHORTCUT=OFF",
-                        "-DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF",
-                        "-DANDROID_STL=c++_shared",
-                        "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
-                        "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384"
+                arguments(*cmakeArgs)
             }
         }
     }
@@ -69,7 +95,7 @@ android {
 
     externalNativeBuild {
         cmake {
-            version "3.22.1"
+            version "3.31.5"
             path rootCMakeLists
         }
     }
@@ -86,12 +112,24 @@ android {
     }
 
     Properties properties = new Properties()
-    def propertiesFile = file("../local.properties")
-    if (propertiesFile.exists()) {
-        properties.load(propertiesFile.newDataInputStream())
+    def localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        properties.load(localPropertiesFile.newDataInputStream())
+    }
+    def keystorePropertiesFile = rootProject.file("keystore.properties")
+    if (keystorePropertiesFile.exists()) {
+        properties.load(keystorePropertiesFile.newDataInputStream())
     }
 
-    if(properties.containsKey("chiakiKeystore")) {
+    if (properties.containsKey("storeFile") && properties.containsKey("storePassword")
+            && properties.containsKey("keyAlias") && properties.containsKey("keyPassword")) {
+        println("Enabling Release Signing from keystore.properties")
+        signingConfigs.release.storeFile = rootProject.file(properties.getProperty("storeFile"))
+        signingConfigs.release.storePassword = properties.getProperty("storePassword")
+        signingConfigs.release.keyAlias = properties.getProperty("keyAlias")
+        signingConfigs.release.keyPassword = properties.getProperty("keyPassword")
+        buildTypes.release.signingConfig = signingConfigs.release
+    } else if (properties.containsKey("chiakiKeystore")) {
         println("Enabling Local Signing")
         buildTypes.release.signingConfig = signingConfigs.release
         buildTypes.debug.signingConfig = signingConfigs.release
@@ -100,7 +138,8 @@ android {
         signingConfigs.release.keyAlias = properties.get("chiakiKeyAlias")
         signingConfigs.release.keyPassword = properties.get("chiakiKeyPW")
     } else {
-        println("Signing not enabled")
+        println("Signing not configured, falling back to debug keystore for release build")
+        buildTypes.release.signingConfig = signingConfigs.debug
     }
 }
 
@@ -131,6 +170,7 @@ dependencies {
     ksp libs.moshi.kotlin.codegen
 
     implementation libs.oboe
+    implementation project(':ecp')
 
     testImplementation 'junit:junit:4.13.2'
 }

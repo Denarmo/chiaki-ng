@@ -1,4 +1,47 @@
 
+if(CMAKE_HOST_WIN32 OR ANDROID_ABI)
+	include(FetchContent)
+
+	set(WITH_APPS OFF CACHE BOOL "" FORCE)
+	set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+	FetchContent_Declare(
+		openssl_cmake
+		GIT_REPOSITORY https://github.com/janbar/openssl-cmake.git
+		GIT_TAG 1.1.1w-20250419
+		GIT_SHALLOW TRUE
+	)
+	FetchContent_MakeAvailable(openssl_cmake)
+
+	set(OPENSSL_CMAKE_INCLUDE_DIR "${openssl_cmake_BINARY_DIR}/include")
+	target_include_directories(crypto PUBLIC "${OPENSSL_CMAKE_INCLUDE_DIR}")
+	target_include_directories(ssl PUBLIC "${OPENSSL_CMAKE_INCLUDE_DIR}")
+
+	add_library(OpenSSL_Crypto INTERFACE)
+	target_link_libraries(OpenSSL_Crypto INTERFACE ssl crypto)
+	target_include_directories(OpenSSL_Crypto INTERFACE "${OPENSSL_CMAKE_INCLUDE_DIR}")
+
+	if(NOT TARGET OpenSSL::Crypto)
+		add_library(OpenSSL::Crypto INTERFACE IMPORTED GLOBAL)
+		set_property(TARGET OpenSSL::Crypto PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_CMAKE_INCLUDE_DIR}")
+		set_property(TARGET OpenSSL::Crypto PROPERTY INTERFACE_LINK_LIBRARIES crypto)
+	endif()
+
+	if(NOT TARGET OpenSSL::SSL)
+		add_library(OpenSSL::SSL INTERFACE IMPORTED GLOBAL)
+		set_property(TARGET OpenSSL::SSL PROPERTY INTERFACE_INCLUDE_DIRECTORIES "${OPENSSL_CMAKE_INCLUDE_DIR}")
+		set_property(TARGET OpenSSL::SSL PROPERTY INTERFACE_LINK_LIBRARIES "ssl;OpenSSL::Crypto")
+	endif()
+
+	set(OPENSSL_FOUND TRUE CACHE BOOL "" FORCE)
+	set(OpenSSL_FOUND TRUE CACHE BOOL "" FORCE)
+	set(OPENSSL_VERSION "1.1.1w" CACHE STRING "" FORCE)
+	set(OPENSSL_INCLUDE_DIR "${OPENSSL_CMAKE_INCLUDE_DIR}" CACHE PATH "" FORCE)
+	set(OPENSSL_CRYPTO_LIBRARY crypto CACHE STRING "" FORCE)
+	set(OPENSSL_SSL_LIBRARY ssl CACHE STRING "" FORCE)
+	return()
+endif()
+
 include(ExternalProject)
 
 set(OPENSSL_INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/openssl-install-prefix")

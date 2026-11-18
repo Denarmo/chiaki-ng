@@ -91,6 +91,9 @@ private class ChiakiNative
 		@JvmStatic external fun sessionStop(ptr: Long): Int
 		@JvmStatic external fun sessionJoin(ptr: Long): Int
 		@JvmStatic external fun sessionSetSurface(ptr: Long, surface: Surface?)
+		@JvmStatic external fun sessionGetDecodedFrames(ptr: Long): Long
+		@JvmStatic external fun sessionSetVolume(ptr: Long, volume: Float)
+		@JvmStatic external fun sessionSetMuted(ptr: Long, muted: Boolean)
 		@JvmStatic external fun sessionSetControllerState(ptr: Long, controllerState: ControllerState)
 		@JvmStatic external fun sessionSetLoginPin(ptr: Long, pin: String)
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
@@ -379,7 +382,23 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 
 	fun setSurface(surface: Surface?)
 	{
-		ChiakiNative.sessionSetSurface(nativePtr, surface)
+		if(nativePtr != 0L)
+			ChiakiNative.sessionSetSurface(nativePtr, surface)
+	}
+
+	fun getDecodedFrames(): Long =
+		if(nativePtr != 0L) ChiakiNative.sessionGetDecodedFrames(nativePtr) else 0L
+
+	fun setVolume(volume: Float)
+	{
+		if(nativePtr != 0L)
+			ChiakiNative.sessionSetVolume(nativePtr, volume)
+	}
+
+	fun setMuted(muted: Boolean)
+	{
+		if(nativePtr != 0L)
+			ChiakiNative.sessionSetMuted(nativePtr, muted)
 	}
 
 	fun setControllerState(controllerState: ControllerState)

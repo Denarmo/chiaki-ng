@@ -16,3 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = 'Chiaki'
 include ':app'
+include ':ecp'
+project(':ecp').projectDir = new File(settingsDir, 'ecp-sdk')

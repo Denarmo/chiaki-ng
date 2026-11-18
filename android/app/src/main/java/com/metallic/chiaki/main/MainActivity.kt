@@ -8,7 +8,9 @@ import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
 import android.view.View
+import android.widget.Toast
 import androidx.activity.addCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
@@ -25,6 +27,7 @@ import com.metallic.chiaki.manualconsole.EditManualConsoleActivity
 import com.metallic.chiaki.regist.RegistActivity
 import com.metallic.chiaki.settings.SettingsActivity
 import com.metallic.chiaki.stream.StreamActivity
+import org.json.JSONObject
 
 class MainActivity : AppCompatActivity()
 {
@@ -32,6 +35,23 @@ class MainActivity : AppCompatActivity()
 
 	private lateinit var binding: ActivityMainBinding
 	private var discoveryMenuItem: MenuItem? = null
+	private var pendingExportJson: String? = null
+
+	private val exportShortcutLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+		val payload = pendingExportJson
+		pendingExportJson = null
+		if(uri == null || payload == null)
+			return@registerForActivityResult
+		try {
+			contentResolver.openOutputStream(uri, "wt")?.use { out ->
+				out.write(payload.toByteArray(Charsets.UTF_8))
+			} ?: throw IllegalStateException("Null output stream")
+			val label = uri.lastPathSegment?.substringAfterLast('/') ?: "shortcut.chiaki"
+			Toast.makeText(this, getString(R.string.export_shortcut_saved, label), Toast.LENGTH_SHORT).show()
+		} catch(e: Exception) {
+			Toast.makeText(this, R.string.export_shortcut_failed, Toast.LENGTH_LONG).show()
+		}
+	}
 
 	override fun onCreate(savedInstanceState: Bundle?)
 	{
@@ -60,7 +80,7 @@ class MainActivity : AppCompatActivity()
 		viewModel = ViewModelProvider(this, viewModelFactory { MainViewModel(getDatabase(this), Preferences(this)) })
 			.get(MainViewModel::class.java)
 
-		val recyclerViewAdapter = DisplayHostRecyclerViewAdapter(this::hostTriggered, this::wakeupHost, this::editHost, this::deleteHost)
+		val recyclerViewAdapter = DisplayHostRecyclerViewAdapter(this::hostTriggered, this::wakeupHost, this::exportShortcut, this::editHost, this::deleteHost)
 		binding.hostsRecyclerView.adapter = recyclerViewAdapter
 		binding.hostsRecyclerView.layoutManager = LinearLayoutManager(this)
 		viewModel.displayHosts.observe(this, Observer {
@@ -244,5 +264,25 @@ class MainActivity : AppCompatActivity()
 			.setNegativeButton(R.string.action_keep) { _, _ -> }
 			.create()
 			.show()
+	}
+
+	private fun exportShortcut(host: DisplayHost)
+	{
+		val registered = host.registeredHost ?: return
+		val nickname = (host.name ?: registered.serverNickname)?.takeIf { it.isNotBlank() }
+		val mac = registered.serverMac.toString()
+		val targetName = if(registered.target.isPS5) "ps5" else "ps4"
+		val json = JSONObject().apply {
+			if(nickname != null) put("nickname", nickname)
+			put("mac", mac)
+			put("target", targetName)
+			put("wakeup", true)
+			if(host is ManualDisplayHost && host.host.isNotBlank())
+				put("host", host.host)
+		}
+		pendingExportJson = json.toString(2) + "\n"
+		val rawBase = nickname ?: mac.replace(":", "")
+		val safeBase = rawBase.replace(Regex("[^A-Za-z0-9._ -]+"), "_").trim().ifEmpty { "PlayStation" }
+		exportShortcutLauncher.launch("$safeBase.chiaki")
 	}
 }

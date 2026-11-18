@@ -4,6 +4,11 @@ if(NOT PROTOC)
 	message(FATAL_ERROR "Could not find protoc")
 endif()
 
+if(NOT PYTHON_EXECUTABLE)
+	find_package(Python3 COMPONENTS Interpreter REQUIRED)
+	set(PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+endif()
+
 add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/takion.pb"
 		COMMAND "${PROTOC}" "-o${CMAKE_CURRENT_BINARY_DIR}/takion.pb" "${CMAKE_CURRENT_SOURCE_DIR}/takion.proto" "-I${CMAKE_CURRENT_SOURCE_DIR}"
 		MAIN_DEPENDENCY "${CMAKE_CURRENT_SOURCE_DIR}/takion.proto")
@@ -11,10 +16,16 @@ add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/takion.pb"
 set(SOURCE_FILES "${CMAKE_CURRENT_BINARY_DIR}/takion.pb.c")
 set(HEADER_FILES "${CMAKE_CURRENT_BINARY_DIR}/takion.pb.h")
 
-if(UNIX AND IS_ABSOLUTE "${PROTOC}")
+if(IS_ABSOLUTE "${PROTOC}")
 	# make sure protoc is in PATH when invoking the generator below, which needs it.
 	get_filename_component(PROTOC_PATH "${PROTOC}" DIRECTORY)
-	set(GEN_PREFIX "${CMAKE_COMMAND}" -E env "PATH=${PROTOC_PATH}:$ENV{PATH}")
+	if(CMAKE_HOST_WIN32)
+		set(GEN_PREFIX "${CMAKE_COMMAND}" -E env --modify "PATH=path_list_prepend:${PROTOC_PATH}")
+	elseif(UNIX)
+		set(GEN_PREFIX "${CMAKE_COMMAND}" -E env "PATH=${PROTOC_PATH}:$ENV{PATH}")
+	else()
+		set(GEN_PREFIX "")
+	endif()
 else()
 	set(GEN_PREFIX "")
 endif()

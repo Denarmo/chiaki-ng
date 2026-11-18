@@ -4,6 +4,7 @@
 #define CHIAKI_JNI_VIDEO_DECODER_H
 
 #include <jni.h>
+#include <stdatomic.h>
 
 #include <chiaki/thread.h>
 #include <chiaki/log.h>
@@ -23,6 +24,9 @@ typedef struct android_chiaki_video_decoder_t
 	int32_t target_width;
 	int32_t target_height;
 	ChiakiCodec target_codec;
+	atomic_uint_fast64_t frames_decoded;
+	uint8_t csd[1024];
+	size_t csd_size;
 } AndroidChiakiVideoDecoder;
 
 ChiakiErrorCode android_chiaki_video_decoder_init(AndroidChiakiVideoDecoder *decoder, ChiakiLog *log, int32_t target_width, int32_t target_height, ChiakiCodec codec);

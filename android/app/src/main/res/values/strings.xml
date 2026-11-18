@@ -105,6 +105,14 @@
     <string name="display_hosts_empty_discovery_on_info">No consoles added or discovered.</string>
     <string name="stream_on_screen_controls">On-Screen Controls</string>
     <string name="stream_touchpad_only">Touchpad only</string>
+    <string name="action_export_shortcut">Save .chiaki for EmuDEN</string>
+    <string name="export_shortcut_saved">Saved %1$s</string>
+    <string name="export_shortcut_failed">Could not save .chiaki file</string>
+    <string name="ecp_connecting">Connecting to PlayStation…</string>
+    <string name="ecp_waking_up">Waking PlayStation (%1$s)…</string>
+    <string name="ecp_error_missing_target">Missing PlayStation target or .chiaki file</string>
+    <string name="ecp_error_unregistered">Console %1$s is not registered in Chiaki. Open Chiaki and register it first.</string>
+    <string name="ecp_error_invalid_target">Could not read target: %1$s</string>
 
     <!-- Don't localize these -->
     <string name="preferences_discovery_enabled_key">discovery_enabled</string>

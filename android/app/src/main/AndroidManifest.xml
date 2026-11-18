@@ -26,7 +26,7 @@
         tools:ignore="GoogleAppIndexingWarning">
 
         <provider
-            android:authorities="com.metallic.chiaki.fileprovider"
+            android:authorities="${applicationId}.fileprovider"
             android:name="androidx.core.content.FileProvider"
             android:grantUriPermissions="true"
             android:exported="false">
@@ -69,6 +69,56 @@
             android:name=".manualconsole.EditManualConsoleActivity"
             android:theme="@style/MageTheme"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize" />
+
+        <activity
+            android:name=".ecp.EcpPlayActivity"
+            android:theme="@style/EcpPlayTheme"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.play"
+            android:autoRemoveFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode|density">
+            <meta-data
+                android:name="io.github.ecp.descriptor"
+                android:resource="@raw/ecp" />
+            <intent-filter>
+                <action android:name="io.github.ecp.action.PLAY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:scheme="content" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.chiaki" />
+                <data android:pathPattern=".*\\..*\\.chiaki" />
+                <data android:pathPattern=".*\\..*\\..*\\.chiaki" />
+                <data android:pathPattern=".*\\.psremote" />
+                <data android:pathPattern=".*\\..*\\.psremote" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.chiaki" />
+                <data android:pathPattern=".*\\..*\\.chiaki" />
+                <data android:pathPattern=".*\\.psremote" />
+                <data android:pathPattern=".*\\..*\\.psremote" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".ecp.EcpConfigureReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="io.github.ecp.action.CONFIGURE" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

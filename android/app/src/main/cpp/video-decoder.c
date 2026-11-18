@@ -14,21 +14,55 @@
 
 static void *android_chiaki_video_decoder_output_thread_func(void *user);
 
+static bool is_codec_config_sample(ChiakiCodec target_codec, const uint8_t *buf, size_t size)
+{
+	if(size < 5)
+		return false;
+	size_t off = 0;
+	if(buf[0] == 0 && buf[1] == 0 && buf[2] == 0 && buf[3] == 1)
+		off = 4;
+	else if(buf[0] == 0 && buf[1] == 0 && buf[2] == 1)
+		off = 3;
+	else
+		return false;
+	uint8_t nal = buf[off];
+	if(chiaki_codec_is_h265(target_codec))
+	{
+		uint8_t type = (nal >> 1) & 0x3f;
+		return type == 32 || type == 33 || type == 34;
+	}
+	uint8_t type = nal & 0x1f;
+	return type == 7 || type == 8;
+}
+
 ChiakiErrorCode android_chiaki_video_decoder_init(AndroidChiakiVideoDecoder *decoder, ChiakiLog *log, int32_t target_width, int32_t target_height, ChiakiCodec codec)
 {
 	decoder->log = log;
 	decoder->codec = NULL;
+	decoder->window = NULL;
 	decoder->timestamp_cur = 0;
 	decoder->target_width = target_width;
 	decoder->target_height = target_height;
 	decoder->target_codec = codec;
 	decoder->shutdown_output = false;
+	atomic_init(&decoder->frames_decoded, 0);
+	decoder->csd_size = 0;
 	return chiaki_mutex_init(&decoder->codec_mutex, false);
 }
 
 static void kill_decoder(AndroidChiakiVideoDecoder *decoder)
 {
 	chiaki_mutex_lock(&decoder->codec_mutex);
+	if(!decoder->codec)
+	{
+		if(decoder->window)
+		{
+			ANativeWindow_release(decoder->window);
+			decoder->window = NULL;
+		}
+		chiaki_mutex_unlock(&decoder->codec_mutex);
+		return;
+	}
 	decoder->shutdown_output = true;
 	ssize_t codec_buf_index = AMediaCodec_dequeueInputBuffer(decoder->codec, 1000);
 	if(codec_buf_index >= 0)
@@ -44,16 +78,26 @@ static void kill_decoder(AndroidChiakiVideoDecoder *decoder)
 		CHIAKI_LOGE(decoder->log, "Failed to get input buffer for shutting down Video Decoder!");
 		AMediaCodec_stop(decoder->codec);
 		chiaki_mutex_unlock(&decoder->codec_mutex);
+		chiaki_thread_join(&decoder->output_thread, NULL);
 	}
-	AMediaCodec_delete(decoder->codec);
-	decoder->codec = NULL;
+	chiaki_mutex_lock(&decoder->codec_mutex);
+	if(decoder->codec)
+	{
+		AMediaCodec_delete(decoder->codec);
+		decoder->codec = NULL;
+	}
+	if(decoder->window)
+	{
+		ANativeWindow_release(decoder->window);
+		decoder->window = NULL;
+	}
 	decoder->shutdown_output = false;
+	chiaki_mutex_unlock(&decoder->codec_mutex);
 }
 
 void android_chiaki_video_decoder_fini(AndroidChiakiVideoDecoder *decoder)
 {
-	if(decoder->codec)
-		kill_decoder(decoder);
+	kill_decoder(decoder);
 	chiaki_mutex_fini(&decoder->codec_mutex);
 }
 
@@ -65,9 +109,17 @@ void android_chiaki_video_decoder_set_surface(AndroidChiakiVideoDecoder *decoder
 	{
 		if(decoder->codec)
 		{
+			chiaki_mutex_unlock(&decoder->codec_mutex);
 			kill_decoder(decoder);
 			CHIAKI_LOGI(decoder->log, "Decoder shut down after surface was removed");
+			return;
 		}
+		if(decoder->window)
+		{
+			ANativeWindow_release(decoder->window);
+			decoder->window = NULL;
+		}
+		chiaki_mutex_unlock(&decoder->codec_mutex);
 		return;
 	}
 
@@ -118,10 +170,26 @@ void android_chiaki_video_decoder_set_surface(AndroidChiakiVideoDecoder *decoder
 		goto error_codec;
 	}
 
+	if(decoder->csd_size > 0)
+	{
+		ssize_t csd_buf_idx = AMediaCodec_dequeueInputBuffer(decoder->codec, INPUT_BUFFER_TIMEOUT_MS * 1000);
+		if(csd_buf_idx >= 0)
+		{
+			size_t cap = 0;
+			uint8_t *dst = AMediaCodec_getInputBuffer(decoder->codec, (size_t)csd_buf_idx, &cap);
+			if(dst && cap >= decoder->csd_size)
+			{
+				memcpy(dst, decoder->csd, decoder->csd_size);
+				AMediaCodec_queueInputBuffer(decoder->codec, (size_t)csd_buf_idx, 0, decoder->csd_size, decoder->timestamp_cur++, AMEDIACODEC_BUFFER_FLAG_CODEC_CONFIG);
+			}
+		}
+	}
+
 	ChiakiErrorCode err = chiaki_thread_create(&decoder->output_thread, android_chiaki_video_decoder_output_thread_func, decoder);
 	if(err != CHIAKI_ERR_SUCCESS)
 	{
 		CHIAKI_LOGE(decoder->log, "Failed to create output thread for AMediaCodec");
+		AMediaCodec_stop(decoder->codec);
 		goto error_codec;
 	}
 
@@ -145,9 +213,16 @@ bool android_chiaki_video_decoder_video_sample(uint8_t *buf, size_t buf_size, in
 	AndroidChiakiVideoDecoder *decoder = user;
 	chiaki_mutex_lock(&decoder->codec_mutex);
 
+	if(buf_size <= sizeof(decoder->csd) && is_codec_config_sample(decoder->target_codec, buf, buf_size))
+	{
+		memcpy(decoder->csd, buf, buf_size);
+		decoder->csd_size = buf_size;
+	}
+
 	if(!decoder->codec)
 	{
 		CHIAKI_LOGE(decoder->log, "Received video data, but decoder is not initialized!");
+		r = false;
 		goto beach;
 	}
 
@@ -195,6 +270,8 @@ static void *android_chiaki_video_decoder_output_thread_func(void *user)
 		ssize_t status = AMediaCodec_dequeueOutputBuffer(decoder->codec, &info, -1);
 		if(status >= 0)
 		{
+			if(info.size != 0)
+				atomic_fetch_add(&decoder->frames_decoded, 1);
 			AMediaCodec_releaseOutputBuffer(decoder->codec, (size_t)status, info.size != 0);
 			if(info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM)
 			{

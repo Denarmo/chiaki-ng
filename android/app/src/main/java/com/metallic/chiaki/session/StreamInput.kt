@@ -43,15 +43,23 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		return controllerState or touchControllerState
 	}
 
-	private val sensorControllerState = ControllerState() // from Motion Sensors
-	private val keyControllerState = ControllerState() // from KeyEvents
-	private val motionControllerState = ControllerState() // from MotionEvents
+	private var sensorControllerState = ControllerState() // from Motion Sensors
+	private var keyControllerState = ControllerState() // from KeyEvents
+	private var motionControllerState = ControllerState() // from MotionEvents
 	var touchControllerState = ControllerState()
 		set(value)
 		{
 			field = value
 			controllerStateUpdated()
 		}
+
+	fun resetState()
+	{
+		sensorControllerState = ControllerState()
+		keyControllerState = ControllerState()
+		motionControllerState = ControllerState()
+		touchControllerState = ControllerState()
+	}
 
 	private val swapCrossMoon = preferences.swapCrossMoon
 
